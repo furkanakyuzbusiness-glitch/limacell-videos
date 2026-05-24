@@ -4,7 +4,8 @@ const fs   = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const NEON = '#C8F12F';
+const NEON    = '#C8F12F';
+const OVERLAY = process.argv.includes('--overlay'); // transparent background mode
 const S    = 2.4;
 const CW   = Math.round(450*S);  // 1080
 const CH   = Math.round(800*S);  // 1920
@@ -50,8 +51,7 @@ function neonChip(ctx, text, cx, cy, glow, fontSize=22) {
   ctx.save();
   ctx.font = `${fontSize}px "Anton",Arial,sans-serif`;
   const cw = ctx.measureText(text).width+32, ch = fontSize*2;
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(cx-cw/2, cy-ch/2, cw, ch);
+  if (!OVERLAY) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(cx-cw/2, cy-ch/2, cw, ch); }
   ctx.strokeStyle = NEON; ctx.lineWidth = 2;
   ctx.shadowColor = NEON; ctx.shadowBlur = 14+12*glow;
   ctx.strokeRect(cx-cw/2, cy-ch/2, cw, ch);
@@ -93,8 +93,9 @@ function dMiniLith(ctx, cx, cy, glow) {
   const ox=cx-90, oy=cy-50;
   ctx.save(); ctx.translate(ox,oy);
   ctx.fillStyle=NEON; ctx.fillRect(14,6,20,10); ctx.fillRect(146,6,20,10);
-  ctx.fillStyle='#0a0a0a'; ctx.strokeStyle=NEON; ctx.lineWidth=2;
-  rr(ctx,6,16,168,78,4); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle=NEON; ctx.lineWidth=2;
+  if (!OVERLAY) { ctx.fillStyle='#0a0a0a'; rr(ctx,6,16,168,78,4); ctx.fill(); }
+  rr(ctx,6,16,168,78,4); ctx.stroke();
   ctx.strokeStyle=NEON; ctx.lineWidth=1.5; ctx.globalAlpha=0.7;
   rr(ctx,18,30,144,32,3); ctx.stroke(); ctx.globalAlpha=1;
   ctx.strokeStyle=NEON; ctx.lineWidth=2;
@@ -118,8 +119,9 @@ function dChip(ctx, cx, cy, glow) {
       ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
     });
   }
-  ctx.fillStyle='#0a0a0a'; ctx.strokeStyle=NEON; ctx.lineWidth=2.5;
-  rr(ctx,40,40,120,120,8); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle=NEON; ctx.lineWidth=2.5;
+  if (!OVERLAY) { ctx.fillStyle='#0a0a0a'; rr(ctx,40,40,120,120,8); ctx.fill(); }
+  rr(ctx,40,40,120,120,8); ctx.stroke();
   ctx.lineWidth=2; ctx.shadowColor=NEON; ctx.shadowBlur=14;
   ctx.globalAlpha=glow*0.6; rr(ctx,40,40,120,120,8); ctx.stroke();
   ctx.shadowBlur=0; ctx.globalAlpha=1;
@@ -146,7 +148,7 @@ function dBadge(ctx, cx, cy, title, sub) {
   ctx.font='bold 11px "Courier New",monospace';
   const sw=ctx.measureText(sub).width;
   const bw=Math.max(120,Math.max(tw,sw)+32), bh=82;
-  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(cx-bw/2,cy-bh/2,bw,bh);
+  if (!OVERLAY) { ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(cx-bw/2,cy-bh/2,bw,bh); }
   ctx.strokeStyle=NEON; ctx.lineWidth=2; ctx.shadowColor=NEON; ctx.shadowBlur=18;
   ctx.strokeRect(cx-bw/2,cy-bh/2,bw,bh); ctx.shadowBlur=0;
   ctx.font='38px "Anton",Arial,sans-serif';
@@ -222,9 +224,11 @@ function scene2(ctx, t) {
   ctx.globalAlpha=opacity*phoneOp;
   ctx.translate(pCX,pCY); ctx.scale(phoneScale,phoneScale); ctx.translate(-pCX,-pCY);
   // phone body
-  ctx.fillStyle='#0a0a0a'; ctx.strokeStyle=NEON; ctx.lineWidth=2;
+  ctx.strokeStyle=NEON; ctx.lineWidth=2;
   ctx.shadowColor=NEON+'55'; ctx.shadowBlur=22;
-  rr(ctx,pOx,pOy,pW,pH,26); ctx.fill(); ctx.shadowBlur=0; ctx.stroke();
+  if (!OVERLAY) { ctx.fillStyle='#0a0a0a'; rr(ctx,pOx,pOy,pW,pH,26); ctx.fill(); }
+  ctx.shadowBlur=0;
+  rr(ctx,pOx,pOy,pW,pH,26); ctx.stroke();
   // notch
   ctx.fillStyle='rgba(255,255,255,0.15)'; rr(ctx,pCX-30,pOy+8,60,6,4); ctx.fill();
   // status bar
@@ -416,11 +420,20 @@ function scene4(ctx, t) {
     ctx.font='28px "Anton",Arial,sans-serif';
     const ctaTxt='SİPARİŞ İÇİN TIKLAYIN';
     const ctaW=ctx.measureText(ctaTxt).width+48, ctaH=56;
-    ctx.fillStyle=NEON;
-    ctx.shadowColor=NEON; ctx.shadowBlur=22+18*ctaGlow;
-    ctx.fillRect(225-ctaW/2,520,ctaW,ctaH);
-    ctx.shadowBlur=0;
-    ctx.fillStyle='#0a0a0a'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    if (!OVERLAY) {
+      ctx.fillStyle=NEON;
+      ctx.shadowColor=NEON; ctx.shadowBlur=22+18*ctaGlow;
+      ctx.fillRect(225-ctaW/2,520,ctaW,ctaH);
+      ctx.shadowBlur=0;
+      ctx.fillStyle='#0a0a0a';
+    } else {
+      ctx.strokeStyle=NEON; ctx.lineWidth=2;
+      ctx.shadowColor=NEON; ctx.shadowBlur=22+18*ctaGlow;
+      ctx.strokeRect(225-ctaW/2,520,ctaW,ctaH);
+      ctx.shadowBlur=0;
+      ctx.fillStyle=NEON;
+    }
+    ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(ctaTxt,225,548);
     ctx.restore();
   }
