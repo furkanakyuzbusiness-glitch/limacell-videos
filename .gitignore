@@ -3,3 +3,7 @@ project/*.mp4
 project/*.mov
 project/*.webm
 project/*.zip
+*.mp4
+*.mov
+*.webm
+*.zip
