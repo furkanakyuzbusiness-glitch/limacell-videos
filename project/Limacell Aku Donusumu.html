@@ -12,58 +12,498 @@
       rel="stylesheet"
     />
     <style>
-      html,
-      body,
-      #root {
-        height: 100%;
-        margin: 0;
-        background: #050505;
-        font-family: "JetBrains Mono", ui-monospace, monospace;
-      }
-      input[type="range"] {
-        height: 4px;
-        background: rgba(255, 255, 255, 0.15);
-        border-radius: 2px;
-        appearance: none;
-        -webkit-appearance: none;
-      }
-      input[type="range"]::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        width: 14px;
-        height: 14px;
-        background: #c8f12f;
-        border-radius: 50%;
-        box-shadow: 0 0 10px #c8f12f;
-        cursor: pointer;
-      }
-      input[type="range"]::-moz-range-thumb {
-        width: 14px;
-        height: 14px;
-        background: #c8f12f;
-        border-radius: 50%;
-        box-shadow: 0 0 10px #c8f12f;
-        border: none;
-        cursor: pointer;
-      }
+      html, body, #root { height: 100%; margin: 0; background: #050505; font-family: "JetBrains Mono", monospace; }
+      @keyframes recpulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
     </style>
-    <script
-      src="https://unpkg.com/react@18.3.1/umd/react.development.js"
-      integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
-      integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
-      integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
-      crossorigin="anonymous"
-    ></script>
+    <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="text/babel" src="app.jsx"></script>
+    <script type="text/babel">
+      const { useState, useRef, useEffect, useCallback } = React;
+      const NEON = "#C8F12F";
+      const RW = 450, RH = 800; // recording canvas dimensions
+
+      // ─── Animation math ──────────────────────────────────────────
+      const inRange = (t, a, b) => t >= a && t <= b;
+      const progress = (t, s, e) => t <= s ? 0 : t >= e ? 1 : (t - s) / (e - s);
+      const easeInOutCubic = p => p < 0.5 ? 4*p*p*p : 1 - Math.pow(-2*p+2, 3)/2;
+
+      // ─── React SVG icons ─────────────────────────────────────────
+      const CargoIcon = ({ size = 220 }) => (
+        <svg viewBox="0 0 220 140" width={size} height={size*140/220} fill="none">
+          <path d="M30 90 L30 55 Q30 45 40 45 L80 45 L100 70 L100 90 Z" stroke="#fff" strokeWidth="3" strokeLinejoin="round"/>
+          <rect x="100" y="30" width="90" height="60" stroke={NEON} strokeWidth="3"/>
+          <line x1="100" y1="60" x2="190" y2="60" stroke={NEON} strokeWidth="2"/>
+          <rect x="40" y="55" width="30" height="15" stroke={NEON} strokeWidth="2"/>
+          <line x1="10" y1="105" x2="210" y2="105" stroke="#fff" strokeWidth="2" opacity="0.5"/>
+          {[55,135,170].map(cx => <g key={cx}>
+            <circle cx={cx} cy="105" r="10" stroke="#fff" strokeWidth="3" fill="#0a0a0a"/>
+            <circle cx={cx} cy="105" r="3" fill={NEON}/>
+          </g>)}
+        </svg>
+      );
+
+      const OldBatteryIcon = ({ size = 200 }) => (
+        <svg viewBox="0 0 200 140" width={size} height={size*140/200} fill="none">
+          <rect x="40" y="18" width="28" height="14" fill="#7a7a78"/>
+          <rect x="132" y="18" width="28" height="14" fill="#7a7a78"/>
+          <rect x="20" y="32" width="160" height="92" fill="#9a9a96" stroke="#bbb" strokeWidth="2"/>
+          {[0,1,2,3].map(i => <circle key={i} cx={45+i*37} cy={50} r="7" fill="#5a5a57" stroke="#3a3a37" strokeWidth="1.5"/>)}
+          <line x1="30" y1="78" x2="170" y2="78" stroke="#6a6a67" strokeWidth="1" opacity="0.5"/>
+          <line x1="30" y1="98" x2="170" y2="98" stroke="#6a6a67" strokeWidth="1" opacity="0.5"/>
+          <rect x="55" y="85" width="90" height="28" fill="#dcdcd7" stroke="#8c8c89" strokeWidth="1"/>
+        </svg>
+      );
+
+      const LithiumBatteryIcon = ({ size = 220 }) => (
+        <svg viewBox="0 0 220 150" width={size} height={size*150/220} fill="none">
+          <defs>
+            <linearGradient id="lifepoBody" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#1a1a1a"/><stop offset="1" stopColor="#0a0a0a"/>
+            </linearGradient>
+          </defs>
+          <rect x="45" y="14" width="28" height="14" fill={NEON}/>
+          <rect x="147" y="14" width="28" height="14" fill={NEON}/>
+          <rect x="22" y="28" width="176" height="108" rx="6" fill="url(#lifepoBody)" stroke={NEON} strokeWidth="2.5"/>
+          <rect x="38" y="48" width="144" height="42" rx="3" stroke={NEON} strokeWidth="1.5" opacity="0.8"/>
+          <circle cx="44" cy="108" r="3" fill={NEON}/>
+          <circle cx="56" cy="108" r="3" fill={NEON}/>
+          <circle cx="68" cy="108" r="3" fill={NEON}/>
+          <circle cx="80" cy="108" r="3" fill={NEON} opacity="0.4"/>
+          <text x="110" y="124" textAnchor="middle" fill={NEON} fontSize="10" fontFamily="monospace" letterSpacing="2">LiFePO₄</text>
+        </svg>
+      );
+
+      // ─── KineticLine ─────────────────────────────────────────────
+      const KineticLine = ({ text, reveal, delayPerChar = 0.04, accent = false }) => (
+        <div className="flex" style={{ fontFamily:"'Anton','Helvetica Neue',sans-serif", fontWeight:800, letterSpacing:"0.01em", lineHeight:0.95 }}>
+          {text.split("").map((c, i) => {
+            const local = Math.min(1, Math.max(0, reveal - i * delayPerChar));
+            const e = easeInOutCubic(local);
+            return (
+              <span key={i} style={{
+                display:"inline-block", transform:`translateY(${(1-e)*28}px)`, opacity:local,
+                fontSize:64, color: accent ? NEON : "#fff",
+                textShadow: accent ? `0 0 22px ${NEON}55` : "0 2px 12px rgba(0,0,0,0.6)",
+                padding: c === " " ? "0 10px" : 0,
+              }}>{c === " " ? " " : c}</span>
+            );
+          })}
+        </div>
+      );
+
+      // ─── React Scenes ─────────────────────────────────────────────
+      const Scene1 = ({ t }) => {
+        if (!inRange(t, -0.2, 4.5)) return null;
+        const w1 = easeInOutCubic(progress(t, 0.2, 1.2));
+        const w2 = easeInOutCubic(progress(t, 0.8, 1.9));
+        const vp = easeInOutCubic(progress(t, 1.1, 2.2));
+        const bob = Math.sin((t-1.6)*2.2)*3;
+        const out = easeInOutCubic(progress(t, 3.4, 4.5));
+        return (
+          <div className="absolute inset-0 flex flex-col items-center justify-center"
+            style={{ opacity:1-out, transform:`translateY(${-16*out}px)` }}>
+            <div className="flex flex-col items-center gap-1 px-6" style={{marginTop:-40}}>
+              <KineticLine text="3 TEKERLİ" reveal={w1} delayPerChar={0.05}/>
+              <div className="h-[2px] my-3" style={{ width:`${w2*100}%`, maxWidth:200, background:NEON, boxShadow:`0 0 12px ${NEON}88`, opacity:w2 }}/>
+              <KineticLine text="KARGO ARACI" reveal={w2} delayPerChar={0.045} accent/>
+            </div>
+            <div className="mt-10" style={{ transform:`scale(${0.85+0.15*vp}) translateY(${bob}px)`, opacity:vp, filter:`drop-shadow(0 0 18px ${NEON}55)` }}>
+              <CargoIcon size={260}/>
+            </div>
+          </div>
+        );
+      };
+
+      const Scene2 = ({ t }) => {
+        if (!inRange(t, 3.8, 7.4)) return null;
+        const inP = easeInOutCubic(progress(t, 4.0, 5.0));
+        const outP = easeInOutCubic(progress(t, 6.4, 7.4));
+        const scale = 0.85 + 0.15 * inP * (1-outP);
+        const opacity = inP * (1-outP);
+        const drift = Math.sin((t-4.1)*1.2)*5;
+        const labelIn = easeInOutCubic(progress(t, 5.0, 6.0));
+        return (
+          <div className="absolute inset-0 flex flex-col items-center justify-center" style={{opacity}}>
+            <div className="relative" style={{ transform:`scale(${scale}) translateY(${drift}px)`, filter:"grayscale(0.4) brightness(0.85)" }}>
+              <OldBatteryIcon size={260}/>
+              <div className="absolute inset-0 flex items-center justify-center" style={{paddingTop:28}}>
+                <div className="text-[#2a2a27] font-bold" style={{ fontFamily:"'Anton',sans-serif", fontSize:36, letterSpacing:"0.02em", opacity:inP, whiteSpace:"nowrap" }}>45 Ah</div>
+              </div>
+            </div>
+            <div className="mt-14" style={{ opacity:labelIn, transform:`translateY(${(1-labelIn)*18}px)` }}>
+              <div className="px-8 py-3" style={{background:"#fff"}}>
+                <div className="text-black font-black" style={{ fontFamily:"'Anton',sans-serif", fontSize:44, letterSpacing:"0.06em", whiteSpace:"nowrap" }}>JEL AKÜ</div>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const Scene3 = ({ t }) => {
+        if (!inRange(t, 6.9, 12.8)) return null;
+        const titleIn = easeInOutCubic(progress(t, 7.1, 8.0));
+        const titleOut = easeInOutCubic(progress(t, 8.6, 9.4));
+        const titleOpacity = titleIn * (1-titleOut);
+        const battIn = easeInOutCubic(progress(t, 9.0, 10.0));
+        const battScale = 0.85 + 0.15 * battIn;
+        const battGlow = 0.55 + 0.25*(0.5 + 0.5*Math.sin((t-9)*1.6));
+        const counterVal = Math.round(45 + 60*easeInOutCubic(progress(t, 9.8, 11.0)));
+        const labelIn = easeInOutCubic(progress(t, 10.8, 11.6));
+        return (
+          <div className="absolute inset-0">
+            {titleOpacity > 0.01 && (
+              <div className="absolute inset-0 flex items-center justify-center" style={{opacity:titleOpacity}}>
+                <div className="text-center px-4" style={{transform:`scale(${0.9+0.1*titleIn})`}}>
+                  <div style={{ fontFamily:"'Anton',sans-serif", fontSize:96, lineHeight:0.9, color:NEON, fontWeight:900, textShadow:`0 0 28px ${NEON}, 0 0 60px ${NEON}88` }}>
+                    BİZ NE<br/>YAPTIK?
+                  </div>
+                  <div className="mx-auto mt-3" style={{ height:3, width:`${titleIn*60}%`, background:NEON, boxShadow:`0 0 18px ${NEON}` }}/>
+                </div>
+              </div>
+            )}
+            {battIn > 0 && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center" style={{marginTop:-20, opacity:battIn}}>
+                <div style={{ position:"absolute", top:"38%", width:320, height:320, borderRadius:"50%", background:`radial-gradient(circle, ${NEON}55 0%, ${NEON}00 65%)`, opacity:battGlow*battIn, filter:"blur(8px)", transform:"translateY(-50%)" }}/>
+                <div style={{ transform:`scale(${battScale})`, filter:`drop-shadow(0 0 24px ${NEON}99) drop-shadow(0 0 60px ${NEON}55)`, position:"relative" }}>
+                  <LithiumBatteryIcon size={260}/>
+                  <div className="absolute inset-0 flex items-center justify-center" style={{paddingTop:8}}>
+                    <div style={{ fontFamily:"'Anton',sans-serif", fontSize:44, color:NEON, letterSpacing:"0.02em", textShadow:`0 0 14px ${NEON}`, fontVariantNumeric:"tabular-nums", whiteSpace:"nowrap" }}>
+                      {counterVal} <span style={{fontSize:22,opacity:0.8}}>Ah</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-10 px-6 text-center" style={{ opacity:labelIn, transform:`translateY(${(1-labelIn)*18}px)` }}>
+                  <div style={{ fontFamily:"'Anton',sans-serif", fontSize:38, lineHeight:1, color:"#fff", letterSpacing:"0.04em", whiteSpace:"nowrap" }}>
+                    105 <span style={{color:NEON}}>Ah</span>
+                  </div>
+                  <div className="mt-2 inline-block px-4 py-2" style={{ background:"rgba(0,0,0,0.55)", border:`2px solid ${NEON}`, boxShadow:`0 0 20px ${NEON}, inset 0 0 8px ${NEON}55` }}>
+                    <div style={{ fontFamily:"'Anton',sans-serif", fontSize:22, color:NEON, letterSpacing:"0.18em", textShadow:`0 0 12px ${NEON}`, whiteSpace:"nowrap" }}>LİTYUM DEMİR FOSFAT</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      };
+
+      // ─── Canvas recording helpers ─────────────────────────────────
+      function rrect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+        ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+        ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+        ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+      }
+
+      function cCargo(ctx, cx, cy, size) {
+        const s = size/220, ox = cx-size/2, oy = cy-(size*140/220)/2;
+        ctx.save(); ctx.translate(ox,oy); ctx.scale(s,s);
+        ctx.strokeStyle="#fff"; ctx.lineWidth=3; ctx.lineJoin="round";
+        ctx.beginPath(); ctx.moveTo(30,90); ctx.lineTo(30,55); ctx.arcTo(30,45,40,45,10); ctx.lineTo(80,45); ctx.lineTo(100,70); ctx.lineTo(100,90); ctx.closePath(); ctx.stroke();
+        ctx.strokeStyle=NEON; ctx.lineWidth=3; ctx.strokeRect(100,30,90,60);
+        ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(100,60); ctx.lineTo(190,60); ctx.stroke();
+        ctx.strokeRect(40,55,30,15);
+        ctx.strokeStyle="rgba(255,255,255,0.5)"; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(10,105); ctx.lineTo(210,105); ctx.stroke();
+        for (const wx of [55,135,170]) {
+          ctx.strokeStyle="#fff"; ctx.lineWidth=3; ctx.fillStyle="#0a0a0a";
+          ctx.beginPath(); ctx.arc(wx,105,10,0,Math.PI*2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle=NEON; ctx.shadowColor=NEON; ctx.shadowBlur=6;
+          ctx.beginPath(); ctx.arc(wx,105,3,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+        }
+        ctx.restore();
+      }
+
+      function cOldBat(ctx, cx, cy, size) {
+        const s = size/200, ox = cx-size/2, oy = cy-(size*140/200)/2;
+        ctx.save(); ctx.translate(ox,oy); ctx.scale(s,s);
+        ctx.filter="grayscale(0.4) brightness(0.85)";
+        ctx.fillStyle="#7a7a78"; ctx.fillRect(40,18,28,14); ctx.fillRect(132,18,28,14);
+        ctx.fillStyle="#9a9a96"; ctx.fillRect(20,32,160,92);
+        ctx.strokeStyle="#bbb"; ctx.lineWidth=2; ctx.strokeRect(20,32,160,92);
+        for (let i=0;i<4;i++) {
+          ctx.fillStyle="#5a5a57"; ctx.strokeStyle="#3a3a37"; ctx.lineWidth=1.5;
+          ctx.beginPath(); ctx.arc(45+i*37,50,7,0,Math.PI*2); ctx.fill(); ctx.stroke();
+        }
+        ctx.strokeStyle="rgba(106,106,103,0.5)"; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(30,78); ctx.lineTo(170,78); ctx.moveTo(30,98); ctx.lineTo(170,98); ctx.stroke();
+        ctx.fillStyle="#dcdcd7"; ctx.strokeStyle="#8c8c89"; ctx.lineWidth=1;
+        ctx.fillRect(55,85,90,28); ctx.strokeRect(55,85,90,28);
+        ctx.restore();
+      }
+
+      function cLiBat(ctx, cx, cy, size) {
+        const s = size/220, ox = cx-size/2, oy = cy-(size*150/220)/2;
+        ctx.save(); ctx.translate(ox,oy); ctx.scale(s,s);
+        ctx.shadowColor=NEON; ctx.shadowBlur=24;
+        ctx.fillStyle=NEON; ctx.fillRect(45,14,28,14); ctx.fillRect(147,14,28,14);
+        const g = ctx.createLinearGradient(0,28,0,136); g.addColorStop(0,"#1a1a1a"); g.addColorStop(1,"#0a0a0a");
+        ctx.fillStyle=g; ctx.strokeStyle=NEON; ctx.lineWidth=2.5;
+        rrect(ctx,22,28,176,108,6); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle="rgba(200,241,47,0.8)"; ctx.lineWidth=1.5;
+        rrect(ctx,38,48,144,42,3); ctx.stroke();
+        const dotX=[44,56,68,80], dotO=[1,1,1,0.4];
+        dotX.forEach((x,i)=>{ ctx.globalAlpha=dotO[i]; ctx.fillStyle=NEON; ctx.beginPath(); ctx.arc(x,108,3,0,Math.PI*2); ctx.fill(); });
+        ctx.globalAlpha=1; ctx.shadowBlur=0;
+        ctx.fillStyle=NEON; ctx.font="10px monospace"; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+        ctx.fillText("LiFePO₄",110,124);
+        ctx.restore();
+      }
+
+      function cKineticText(ctx, text, cx, topY, reveal, delay, accent, size) {
+        ctx.save();
+        ctx.font=`${size}px Anton,"Helvetica Neue",sans-serif`;
+        ctx.textBaseline="top"; ctx.textAlign="left";
+        const chars=text.split(""), widths=chars.map(c=>ctx.measureText(c===" "?" ":c).width);
+        const total=widths.reduce((a,b)=>a+b,0);
+        let x=cx-total/2;
+        chars.forEach((c,i)=>{
+          const local=Math.min(1,Math.max(0,reveal-i*delay));
+          const e=easeInOutCubic(local);
+          ctx.globalAlpha=local;
+          ctx.fillStyle=accent?NEON:"#fff";
+          ctx.shadowColor=accent?NEON:"rgba(0,0,0,0.6)"; ctx.shadowBlur=accent?22:6;
+          ctx.fillText(c===" "?" ":c, x, topY+(1-e)*28);
+          x+=widths[i];
+        });
+        ctx.globalAlpha=1; ctx.shadowBlur=0; ctx.restore();
+      }
+
+      function cScene1(ctx, t) {
+        if (!inRange(t,-0.2,4.5)) return;
+        const w1=easeInOutCubic(progress(t,0.2,1.2));
+        const w2=easeInOutCubic(progress(t,0.8,1.9));
+        const vp=easeInOutCubic(progress(t,1.1,2.2));
+        const bob=Math.sin((t-1.6)*2.2)*3;
+        const out=easeInOutCubic(progress(t,3.4,4.5));
+        ctx.save(); ctx.globalAlpha=1-out; ctx.translate(0,-16*out);
+
+        cKineticText(ctx,"3 TEKERLİ",RW/2,196,w1,0.05,false,64);
+        const lw=w2*200;
+        ctx.globalAlpha=(1-out)*w2; ctx.fillStyle=NEON; ctx.shadowColor=NEON+"88"; ctx.shadowBlur=12;
+        ctx.fillRect(RW/2-lw/2,270,lw,2); ctx.shadowBlur=0;
+        ctx.globalAlpha=1-out;
+        cKineticText(ctx,"KARGO ARACI",RW/2,284,w2,0.045,true,64);
+
+        ctx.save(); ctx.globalAlpha=(1-out)*vp;
+        ctx.shadowColor=NEON+"55"; ctx.shadowBlur=18;
+        ctx.translate(RW/2,490+bob); ctx.scale(0.85+0.15*vp,0.85+0.15*vp); ctx.translate(-RW/2,-(490+bob));
+        cCargo(ctx,RW/2,490,260); ctx.restore();
+        ctx.restore();
+      }
+
+      function cScene2(ctx, t) {
+        if (!inRange(t,3.8,7.4)) return;
+        const inP=easeInOutCubic(progress(t,4.0,5.0));
+        const outP=easeInOutCubic(progress(t,6.4,7.4));
+        const scale=0.85+0.15*inP*(1-outP);
+        const opacity=inP*(1-outP);
+        const drift=Math.sin((t-4.1)*1.2)*5;
+        const labelIn=easeInOutCubic(progress(t,5.0,6.0));
+        const batCY=315;
+        ctx.save(); ctx.globalAlpha=opacity;
+        ctx.save();
+        ctx.translate(RW/2,batCY+drift); ctx.scale(scale,scale); ctx.translate(-RW/2,-(batCY+drift));
+        cOldBat(ctx,RW/2,batCY+drift,260); ctx.restore();
+        // 45 Ah on label (no grayscale)
+        ctx.globalAlpha=opacity*inP;
+        ctx.font="bold 32px Anton,sans-serif"; ctx.fillStyle="#2a2a27";
+        ctx.textAlign="center"; ctx.textBaseline="middle";
+        const batH=260*140/200; const batTop=batCY+drift-batH/2;
+        ctx.fillText("45 Ah", RW/2, batTop+(85+14)*scale*260/200);
+        // JEL AKÜ
+        ctx.globalAlpha=opacity*labelIn;
+        ctx.save(); ctx.translate(0,(1-labelIn)*18);
+        const bannerCY=535;
+        ctx.font="44px Anton,sans-serif"; ctx.textAlign="center";
+        const bw=ctx.measureText("JEL AKÜ").width+64, bh=66;
+        ctx.fillStyle="#fff"; ctx.fillRect(RW/2-bw/2,bannerCY-bh/2,bw,bh);
+        ctx.fillStyle="#000"; ctx.textBaseline="middle"; ctx.fillText("JEL AKÜ",RW/2,bannerCY);
+        ctx.restore(); ctx.restore();
+      }
+
+      function cScene3(ctx, t) {
+        if (!inRange(t,6.9,12.8)) return;
+        const titleIn=easeInOutCubic(progress(t,7.1,8.0));
+        const titleOut=easeInOutCubic(progress(t,8.6,9.4));
+        const titleOp=titleIn*(1-titleOut);
+        const battIn=easeInOutCubic(progress(t,9.0,10.0));
+        const battScale=0.85+0.15*battIn;
+        const battGlow=0.55+0.25*(0.5+0.5*Math.sin((t-9)*1.6));
+        const counterVal=Math.round(45+60*easeInOutCubic(progress(t,9.8,11.0)));
+        const labelIn=easeInOutCubic(progress(t,10.8,11.6));
+        ctx.save();
+        if (titleOp>0.01) {
+          ctx.save(); ctx.globalAlpha=titleOp;
+          const ts=0.9+0.1*titleIn;
+          ctx.translate(RW/2,RH/2); ctx.scale(ts,ts); ctx.translate(-RW/2,-RH/2);
+          ctx.font="900 96px Anton,sans-serif"; ctx.fillStyle=NEON;
+          ctx.textAlign="center"; ctx.textBaseline="middle";
+          ctx.shadowColor=NEON; ctx.shadowBlur=40;
+          ctx.fillText("BİZ NE",RW/2,RH/2-52); ctx.fillText("YAPTIK?",RW/2,RH/2+58);
+          const bw=titleIn*(RW*0.36);
+          ctx.fillStyle=NEON; ctx.shadowBlur=18;
+          ctx.fillRect(RW/2-bw/2,RH/2+122,bw,3); ctx.restore();
+        }
+        if (battIn>0) {
+          ctx.save(); ctx.globalAlpha=battIn;
+          const batCY=310;
+          const hgrd=ctx.createRadialGradient(RW/2,batCY,0,RW/2,batCY,160);
+          hgrd.addColorStop(0,`rgba(200,241,47,${0.33*battGlow})`); hgrd.addColorStop(1,"rgba(200,241,47,0)");
+          ctx.fillStyle=hgrd; ctx.fillRect(RW/2-200,batCY-200,400,400);
+          ctx.save();
+          ctx.translate(RW/2,batCY); ctx.scale(battScale,battScale); ctx.translate(-RW/2,-batCY);
+          cLiBat(ctx,RW/2,batCY,260);
+          // counter in display window
+          ctx.font="44px Anton,sans-serif"; ctx.fillStyle=NEON;
+          ctx.textAlign="center"; ctx.textBaseline="middle";
+          ctx.shadowColor=NEON; ctx.shadowBlur=14;
+          ctx.fillText(`${counterVal} Ah`,RW/2,batCY-6); ctx.restore();
+          // label
+          ctx.globalAlpha=battIn*labelIn;
+          ctx.save(); ctx.translate(0,(1-labelIn)*18);
+          const lY=490;
+          ctx.font="38px Anton,sans-serif"; ctx.textBaseline="top";
+          const w105=ctx.measureText("105 ").width, wAh=ctx.measureText("Ah").width;
+          const startX=RW/2-(w105+wAh)/2;
+          ctx.fillStyle="#fff"; ctx.textAlign="left"; ctx.fillText("105 ",startX,lY);
+          ctx.fillStyle=NEON; ctx.fillText("Ah",startX+w105,lY);
+          const cY=lY+52, chipFont="22px Anton,sans-serif";
+          ctx.font=chipFont;
+          const chipTxt="LİTYUM DEMİR FOSFAT", cw=ctx.measureText(chipTxt).width+32, ch=44;
+          ctx.fillStyle="rgba(0,0,0,0.55)"; ctx.fillRect(RW/2-cw/2,cY,cw,ch);
+          ctx.strokeStyle=NEON; ctx.lineWidth=2; ctx.shadowColor=NEON; ctx.shadowBlur=20;
+          ctx.strokeRect(RW/2-cw/2,cY,cw,ch);
+          ctx.fillStyle=NEON; ctx.textAlign="center"; ctx.textBaseline="middle";
+          ctx.shadowBlur=12; ctx.fillText(chipTxt,RW/2,cY+ch/2);
+          ctx.restore(); ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      // ─── App ─────────────────────────────────────────────────────
+      function App() {
+        const videoRef = useRef(null);
+        const [time, setTime] = useState(0);
+        const [playing, setPlaying] = useState(false);
+        const [recState, setRecState] = useState("idle"); // idle | recording | done
+        const [recPct, setRecPct] = useState(0);
+
+        useEffect(() => {
+          const saved = parseFloat(localStorage.getItem("limacell-time") || "0");
+          if (videoRef.current && !isNaN(saved)) { videoRef.current.currentTime = saved; setTime(saved); }
+        }, []);
+        useEffect(() => { localStorage.setItem("limacell-time", String(time)); }, [time]);
+
+        const togglePlay = () => {
+          const v = videoRef.current; if (!v) return;
+          v.paused ? v.play() : v.pause();
+        };
+        const onTimeUpdate = e => {
+          setTime(e.target.currentTime);
+          const r = document.getElementById("video-root");
+          if (r) r.setAttribute("data-screen-label", `t=${e.target.currentTime.toFixed(1)}s`);
+        };
+
+        const startRec = useCallback(async () => {
+          await document.fonts.ready;
+          const canvas = document.createElement("canvas");
+          canvas.width = RW; canvas.height = RH;
+          const ctx = canvas.getContext("2d");
+          const mimeType =
+            MediaRecorder.isTypeSupported("video/mp4;codecs=avc1") ? "video/mp4;codecs=avc1" :
+            MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
+          const ext = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
+          const stream = canvas.captureStream(30);
+          const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
+          const chunks = [];
+          recorder.ondataavailable = e => e.data.size > 0 && chunks.push(e.data);
+          recorder.onstop = () => {
+            const blob = new Blob(chunks, { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a"); a.href = url;
+            a.download = `limacell-aku-donusumu.${ext}`; a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            setRecState("idle"); setRecPct(0);
+          };
+          const vid = videoRef.current;
+          vid.currentTime = 0;
+          await vid.play();
+          setRecState("recording"); recorder.start(200);
+          const DURATION = 12.5; let t0 = null;
+          function frame(ts) {
+            if (!t0) t0 = ts;
+            const t = Math.min((ts - t0) / 1000, DURATION);
+            setRecPct(t / DURATION);
+            try { ctx.drawImage(vid, 0, 0, RW, RH); }
+            catch { ctx.fillStyle="#050505"; ctx.fillRect(0,0,RW,RH); }
+            const vg = ctx.createRadialGradient(RW/2,RH/2,RW*0.3,RW/2,RH/2,RW*0.75);
+            vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,0.55)");
+            ctx.fillStyle=vg; ctx.fillRect(0,0,RW,RH);
+            cScene1(ctx,t); cScene2(ctx,t); cScene3(ctx,t);
+            t < DURATION ? requestAnimationFrame(frame) : (recorder.stop(), vid.pause());
+          }
+          requestAnimationFrame(frame);
+        }, []);
+
+        const isRec = recState === "recording";
+
+        return (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-6 bg-black">
+            {/* 9:16 stage */}
+            <div id="video-root" data-screen-label="t=0.0s" className="relative overflow-hidden bg-black"
+              style={{ width:"min(92vw, 450px)", aspectRatio:"9/16", borderRadius:22, boxShadow:`0 30px 80px rgba(0,0,0,0.6), 0 0 0 1px ${NEON}33` }}>
+              <video ref={videoRef} src="assets/limacell.mp4"
+                className="absolute inset-0 w-full h-full object-cover z-0"
+                playsInline muted loop crossOrigin="anonymous"
+                onTimeUpdate={onTimeUpdate}
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+              />
+              <div className="absolute inset-0 z-[5] pointer-events-none"
+                style={{ background:"radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, rgba(0,0,0,0.55) 100%)" }}/>
+              <div className="absolute inset-0 z-10 pointer-events-none">
+                <Scene1 t={time}/><Scene2 t={time}/><Scene3 t={time}/>
+              </div>
+              <button onClick={togglePlay} className="absolute inset-0 z-30 flex items-center justify-center" aria-label={playing?"Durdur":"Oynat"}>
+                <div style={{ width:88, height:88, borderRadius:"50%", background:"rgba(0,0,0,0.45)", border:`2px solid ${NEON}`, boxShadow:`0 0 24px ${NEON}66`, opacity:playing?0:1, transition:"opacity 400ms ease", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill={NEON}><path d="M7 5v14l12-7z"/></svg>
+                </div>
+              </button>
+            </div>
+
+            {/* Record button */}
+            <button onClick={isRec ? undefined : startRec} disabled={isRec}
+              style={{ position:"relative", display:"flex", alignItems:"center", gap:10, padding:"13px 32px", borderRadius:6, overflow:"hidden",
+                border:`2px solid ${isRec?"#333":NEON}`, background:isRec?"rgba(255,255,255,0.03)":`rgba(200,241,47,0.07)`,
+                color:isRec?"#555":NEON, fontFamily:"'JetBrains Mono',monospace", fontSize:14, letterSpacing:"0.07em",
+                cursor:isRec?"default":"pointer", transition:"all 200ms", minWidth:240, justifyContent:"center" }}>
+              {isRec ? (
+                <>
+                  <span style={{ width:8, height:8, borderRadius:"50%", background:"#ff4444", display:"inline-block", animation:"recpulse 1s infinite" }}/>
+                  Kaydediliyor… {Math.round(recPct*100)}%
+                  <span style={{ position:"absolute", bottom:0, left:0, height:2, width:`${recPct*100}%`, background:NEON, transition:"width 200ms" }}/>
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+                  MP4 Olarak İndir
+                </>
+              )}
+            </button>
+            <div style={{ color:"#333", fontFamily:"'JetBrains Mono',monospace", fontSize:11, textAlign:"center", maxWidth:320, lineHeight:1.6 }}>
+              Tarayıcı desteğine göre .mp4 veya .webm olarak indirilir.<br/>
+              Sorun yaşarsan dosyaları yerel sunucudan aç: <span style={{color:"#555"}}>python3 -m http.server</span>
+            </div>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
   </body>
 </html>

@@ -1,0 +1,5 @@
+node_modules/
+project/*.mp4
+project/*.mov
+project/*.webm
+project/*.zip
